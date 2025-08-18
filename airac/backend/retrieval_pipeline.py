@@ -2,7 +2,7 @@ import sys
 from dotenv import load_dotenv
 from langgraph.graph import START, END, StateGraph
 from typing import TypedDict
-from retrieval import RetrievePinecone  # <-- Jina-based retriever
+from backend.retrieval import RetrievePinecone
 from langchain_google_genai import ChatGoogleGenerativeAI
 from langchain_core.prompts import PromptTemplate
 from langchain_core.output_parsers import StrOutputParser

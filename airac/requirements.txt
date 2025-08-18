@@ -15,13 +15,8 @@ pinecone
 langchain-pinecone
 
 # NLP / Embeddings
-sentence-transformers
-transformers
 scikit-learn
 scipy
-# CPU-only torch (important for Railway free tier)
-torch==2.2.2+cpu
---extra-index-url https://download.pytorch.org/whl/cpu
 
 # LangChain related
 langchain
