@@ -1,5 +1,5 @@
-from retrieval_pipeline import Badal
-from retrieval_pipeline import ChatState
+from backend.retrieval_pipeline import Badal, ChatState
+
 
 badal = Badal()
 
