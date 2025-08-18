@@ -19,7 +19,8 @@ sentence-transformers
 transformers
 scikit-learn
 scipy
-torch
+# Torch (CPU only, slim)
+torch --extra-index-url https://download.pytorch.org/whl/cpu
 
 # LangChain related
 langchain
