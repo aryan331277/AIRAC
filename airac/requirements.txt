@@ -19,8 +19,9 @@ sentence-transformers
 transformers
 scikit-learn
 scipy
-# Torch (CPU only, slim)
-torch --extra-index-url https://download.pytorch.org/whl/cpu
+# CPU-only torch (important for Railway free tier)
+torch==2.2.2+cpu
+--extra-index-url https://download.pytorch.org/whl/cpu
 
 # LangChain related
 langchain
