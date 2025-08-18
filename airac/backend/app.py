@@ -1,7 +1,7 @@
 from fastapi import FastAPI, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel
-from retrieval_pipeline import Badal
+from backend.retrieval_pipeline import Badal
 import logging
 
 # Set up logging
