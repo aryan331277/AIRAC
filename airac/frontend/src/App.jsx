@@ -102,7 +102,12 @@ export default function App() {
   const [input, setInput] = useState("");
   const [loading, setLoading] = useState(false);
   const [errorMsg, setErrorMsg] = useState("");
+  const [isOnline, setIsOnline] = useState(true);
   const endRef = useRef(null);
+
+  // Configuration - you can move this to environment variables later
+const API_BASE_URL = import.meta.env.VITE_API_URL || "http://127.0.0.1:8000";
+console.log(import.meta.env.VITE_API_URL);
 
   useEffect(() => {
     if (endRef.current) {
@@ -110,22 +115,58 @@ export default function App() {
     }
   }, [messages, loading]);
 
-  async function getBotResponse(userMessage) {
-    return new Promise((resolve) => {
-      setTimeout(() => {
-        const responses = [
-          "I've analyzed your query and found relevant data in the archive.",
-          "Based on my records, here's what I can share...",
-          "The archive contains several relevant entries on that topic.",
-          "My analysis suggests multiple approaches to your question.",
-          "I've cross-referenced your query with our knowledge base.",
-          "The historical records show an interesting pattern here."
-        ];
-        const randomResponse = responses[Math.floor(Math.random() * responses.length)];
-        resolve({ response: `${randomResponse} This is a simulated response to: "${userMessage}"` });
-      }, 900);
+  // Check API health on component mount
+  useEffect(() => {
+    checkApiHealth();
+  }, []);
+
+  const checkApiHealth = async () => {
+    try {
+      const response = await fetch(`${API_BASE_URL}/health`, {
+        method: "GET",
+        headers: { "Content-Type": "application/json" }
+      });
+      
+      if (response.ok) {
+        setIsOnline(true);
+        setErrorMsg("");
+      } else {
+        setIsOnline(false);
+        setErrorMsg("API server is not responding correctly");
+      }
+    } catch (error) {
+      console.warn("API health check failed:", error);
+      setIsOnline(false);
+      setErrorMsg("Cannot connect to AIRAC server. Using offline mode.");
+    }
+  };
+
+  const getBotResponse = async (userMessage) => {
+  try {
+    const response = await fetch(`${API_BASE_URL}/query`, {
+      method: "POST",
+      headers: { 
+        "Content-Type": "application/json",
+      },
+      body: JSON.stringify({ 
+        query: userMessage,  // This sends the user's message
+      })
     });
+
+    if (!response.ok) {
+      throw new Error(`HTTP error! status: ${response.status}`);
+    }
+
+    const data = await response.json();
+    const botResponse = data.response; // Gets the response from your FastAPI
+    
+    return { response: botResponse };
+    
+  } catch (error) {
+    console.error("API Error:", error);
+    throw error;
   }
+};
 
   const sendMessage = async () => {
     setErrorMsg("");
@@ -144,22 +185,40 @@ export default function App() {
 
     try {
       const json = await getBotResponse(trimmed);
-      const botText = (json && (json.response || json.text || json.output)) ?? "No response";
+      const botText = json.response || "No response received";
+      
       const botMsg = { 
         role: "bot", 
         text: botText, 
         time: Date.now(),
-        id: Date.now()
+        id: Date.now() + 1
       };
       setMessages((prev) => [...prev, botMsg]);
+      
+      // Clear any previous error messages on successful response
+      setErrorMsg("");
+      
     } catch (err) {
       console.error("Chat error:", err);
-      setErrorMsg("Could not reach AIRAC. Try again later.");
+      
+      let errorMessage = "Could not reach AIRAC. ";
+      
+      if (err.message.includes("Failed to fetch")) {
+        errorMessage += "Please check if the server is running on http://127.0.0.1:8000";
+        setIsOnline(false);
+      } else if (err.message.includes("HTTP error")) {
+        errorMessage += `Server responded with error: ${err.message}`;
+      } else {
+        errorMessage += "Try again later.";
+      }
+      
+      setErrorMsg(errorMessage);
+      
       const errMsg = { 
         role: "bot", 
-        text: "⚠️ Error: failed to fetch response.", 
+        text: `⚠️ Connection Error: ${err.message}. Please ensure your FastAPI server is running and accessible.`, 
         time: Date.now(),
-        id: Date.now()
+        id: Date.now() + 1
       };
       setMessages((prev) => [...prev, errMsg]);
     } finally {
@@ -211,7 +270,13 @@ export default function App() {
               </svg>
             </div>
             <div>
-              <div className="title-main">AIRAC</div>
+              <div className="title-main">
+                AIRAC 
+                <span className={`status-indicator ${isOnline ? 'online' : 'offline'}`} 
+                      title={isOnline ? 'Connected to server' : 'Server offline'}>
+                  ●
+                </span>
+              </div>
             </div>
           </div>
         </header>
@@ -252,18 +317,47 @@ export default function App() {
             value={input}
             onChange={(e) => setInput(e.target.value)}
             onKeyDown={onKeyDown}
-            placeholder="Type your query... (Enter to send)"
+            placeholder={isOnline ? "Type your query... (Enter to send)" : "Server offline - limited functionality"}
             aria-label="Chat message"
+            disabled={loading}
           />
 
           <div className="actions">
-            <button className="btn primary" onClick={sendMessage} disabled={loading}>
+            <button 
+              className="btn primary" 
+              onClick={sendMessage} 
+              disabled={loading || !input.trim()}
+              title={!isOnline ? "Server is offline" : ""}
+            >
               {loading ? "Processing..." : "Send"}
             </button>
+            
+            {!isOnline && (
+              <button 
+                className="btn secondary" 
+                onClick={checkApiHealth}
+                title="Check server connection"
+              >
+                Retry Connection
+              </button>
+            )}
           </div>
         </footer>
 
-        {errorMsg && <div className="error-line">{errorMsg}</div>}
+        {errorMsg && (
+          <div className="error-line">
+            {errorMsg}
+            {!isOnline && (
+              <button 
+                className="retry-btn"
+                onClick={checkApiHealth}
+                style={{marginLeft: '10px', fontSize: '12px'}}
+              >
+                Retry
+              </button>
+            )}
+          </div>
+        )}
       </main>
 
       <svg className="bg-brain" viewBox="0 0 200 200" aria-hidden>
