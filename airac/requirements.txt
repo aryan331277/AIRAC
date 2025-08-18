@@ -32,3 +32,9 @@ openai
 
 # Optional caching / utilities
 cachetools
+
+
+
+langgraph
+pinecone-client
+chromadb
