@@ -1,32 +1,65 @@
 import sys
+import os
 from dotenv import load_dotenv
 from langgraph.graph import START, END, StateGraph
 from typing import TypedDict
-from backend.retrieval import RetrievePinecone
-from langchain_google_genai import ChatGoogleGenerativeAI
+from retrieval import RetrievePinecone
 from langchain_core.prompts import PromptTemplate
 from langchain_core.output_parsers import StrOutputParser
 from cache import Cache
 from langchain_groq import ChatGroq
+from itertools import cycle
+
+
+# -------------------------------
+# 1. State for LangGraph
+# -------------------------------
 class ChatState(TypedDict):
     query: str
     retrieved_text: str
     retrieved_tables: list[str]
     answer: str
 
+
+# -------------------------------
+# 2. Key Manager for Groq
+# -------------------------------
+class GroqKeyManager:
+    def __init__(self, model_name="llama-3.3-70b-versatile"):
+        load_dotenv()
+        keys = os.getenv("GROQ_KEYS", "").split(",")
+        if not keys or keys == [""]:
+            raise ValueError("❌ No Groq API keys found in .env file (GROQ_KEYS).")
+
+        self.keys = cycle(keys)  # infinite round-robin
+        self.model_name = model_name
+        self.current_key = next(self.keys)
+
+    def get_model(self):
+        return ChatGroq(model=self.model_name, api_key=self.current_key)
+
+    def rotate_key(self):
+        self.current_key = next(self.keys)
+        print(f"🔄 Switching API key... Now using: {self.current_key[:6]}***")
+        return self.get_model()
+
+
+# -------------------------------
+# 3. RAG Pipeline (Badal)
+# -------------------------------
 class Badal:
     def __init__(self):
-        load_dotenv()
-        self.model = ChatGroq(
-            model="llama-3.3-70b-versatile",
-            api_key=groq_api_key
-        )
+        self.key_manager = GroqKeyManager()
+        self.model = self.key_manager.get_model()
 
         self.cache = Cache()
-        self.retriever = RetrievePinecone()   # <-- Jina embeddings
+        self.retriever = RetrievePinecone()   # <-- Jina embeddings assumed
         self.str_parser = StrOutputParser()
         self.graph = self.graph_building()
 
+    # -------------------------------
+    # Document Retrieval
+    # -------------------------------
     def retrieve_doc(self, state: ChatState):
         query = state["query"]
         
@@ -56,11 +89,15 @@ class Badal:
 
 
 
+
+    # -------------------------------
+    # Answer Generation
+    # -------------------------------
     def get_answer(self, state: ChatState):
         query = state['query']
         parent_text = state["retrieved_text"]
         parent_tables = state["retrieved_tables"]
-        
+
         prompt = PromptTemplate(
             input_variables=["query", "parent_text", "parent_tables"],
             template="""
@@ -80,10 +117,33 @@ class Badal:
                 Only reply with the answer and nothing else.
             """
         )
+
         chain = prompt | self.model | self.str_parser
-        answer = chain.invoke({"query": query, "parent_text": parent_text, "parent_tables": parent_tables})
+
+        try:
+            answer = chain.invoke({
+                "query": query,
+                "parent_text": parent_text,
+                "parent_tables": parent_tables
+            })
+        except Exception as e:
+            if "429" in str(e) or "quota" in str(e).lower():
+                # rotate key + retry
+                self.model = self.key_manager.rotate_key()
+                chain = prompt | self.model | self.str_parser
+                answer = chain.invoke({
+                    "query": query,
+                    "parent_text": parent_text,
+                    "parent_tables": parent_tables
+                })
+            else:
+                raise e
+
         return {"answer": answer}
 
+    # -------------------------------
+    # Graph Construction
+    # -------------------------------
     def graph_building(self):
         builder = StateGraph(ChatState)
         builder.add_node(self.retrieve_doc)
@@ -93,34 +153,12 @@ class Badal:
         builder.add_edge("retrieve_doc", "get_answer")
         builder.add_edge("get_answer", END)
 
-        graph = builder.compile()
-        return graph
+        return builder.compile()
 
+    # -------------------------------
+    # Entry Point
+    # -------------------------------
     def invoke(self, query):
         init_state = {"query": query}
-        answer = self.graph.invoke(init_state)["answer"]
-        return answer
+        return self.graph.invoke(init_state)["answer"]
 
-
-# --- MAIN EXECUTION BLOCK ---
-# This code will run when you execute `python retrieval_pipeline.py`
-if __name__ == "__main__":
-    # Check if a query was provided from the command line
-    if len(sys.argv) > 1:
-        # Join all arguments after the script name to form the query
-        user_query = " ".join(sys.argv[1:])
-    else:
-        # If no query is given, use a default one or ask the user
-        user_query = "What is the capital of France?" # Example query
-
-    print(f"Processing query: '{user_query}'")
-    
-    # 1. Create an instance of your RAG pipeline
-    badal_pipeline = Badal()
-    
-    # 2. Invoke the pipeline with the user's query
-    final_answer = badal_pipeline.invoke(user_query)
-    
-    # 3. Print the final answer
-    print("\n--- Final Answer ---")
-    print(final_answer)
