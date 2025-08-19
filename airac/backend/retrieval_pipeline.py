@@ -7,7 +7,7 @@ from langchain_google_genai import ChatGoogleGenerativeAI
 from langchain_core.prompts import PromptTemplate
 from langchain_core.output_parsers import StrOutputParser
 from cache import Cache
-
+from langchain_groq import ChatGroq
 class ChatState(TypedDict):
     query: str
     retrieved_text: str
@@ -17,7 +17,11 @@ class ChatState(TypedDict):
 class Badal:
     def __init__(self):
         load_dotenv()
-        self.model = ChatGoogleGenerativeAI(model="gemini-2.5-flash-lite")
+        self.model = ChatGroq(
+            model="llama-3.3-70b-versatile",
+            api_key=groq_api_key
+        )
+
         self.cache = Cache()
         self.retriever = RetrievePinecone()   # <-- Jina embeddings
         self.str_parser = StrOutputParser()
